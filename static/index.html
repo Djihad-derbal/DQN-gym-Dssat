@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NitroDQN — AI Nitrogen Manager</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+/* ── Reset & base ──────────────────────────────────────────────────────────── */
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --green-900:#0f2d13;--green-800:#1a4520;--green-700:#245c2c;
+  --green-600:#2d7a3a;--green-500:#3a9e4b;--green-400:#5cb96a;
+  --green-300:#8dd198;--green-200:#c4e8cb;--green-100:#e8f5ea;
+  --soil:#5c3d1e;--soil-light:#8b6240;--sky:#d4eaf7;
+  --yellow:#f5c842;--red:#e74c3c;--blue:#3498db;
+  --gray-900:#111;--gray-800:#1e1e1e;--gray-700:#2c2c2c;
+  --gray-600:#3a3a3a;--gray-400:#666;--gray-200:#ccc;--gray-100:#f0f0f0;
+  --card-bg:#1c2e1f;--panel-bg:#152118;
+  --font-mono:'Courier New',monospace;
+}
+html,body{height:100%;background:var(--gray-900);color:#e8f0ea;font-family:'Segoe UI',system-ui,sans-serif;font-size:14px;overflow:hidden}
+
+/* ── Layout ────────────────────────────────────────────────────────────────── */
+#app{display:grid;grid-template-rows:52px 1fr 220px;height:100vh}
+
+/* ── Header ────────────────────────────────────────────────────────────────── */
+header{background:var(--green-900);display:flex;align-items:center;gap:14px;padding:0 20px;border-bottom:2px solid var(--green-700)}
+header h1{font-size:1.15rem;letter-spacing:.5px;color:var(--green-300)}
+header h1 span{color:var(--yellow)}
+#status-badge{background:var(--green-800);border:1px solid var(--green-600);border-radius:20px;padding:3px 12px;font-size:.72rem;color:var(--green-300)}
+#status-badge.error{border-color:var(--red);color:#f8a;background:#2d1010}
+.spacer{flex:1}
+#settings-btn{background:var(--green-800);border:1px solid var(--green-600);color:var(--green-300);padding:5px 14px;border-radius:6px;cursor:pointer;font-size:.8rem;transition:.2s}
+#settings-btn:hover{background:var(--green-700)}
+
+/* ── Main grid (3 columns) ─────────────────────────────────────────────────── */
+#main{display:grid;grid-template-columns:280px 1fr 320px;gap:0;overflow:hidden}
+
+/* ── Panels ────────────────────────────────────────────────────────────────── */
+.panel{background:var(--panel-bg);border-right:1px solid #1e3320;overflow-y:auto;padding:14px}
+.panel:last-child{border-right:none}
+.panel-title{font-size:.7rem;text-transform:uppercase;letter-spacing:1.5px;color:var(--green-400);margin-bottom:12px;display:flex;align-items:center;gap:6px}
+.panel-title svg{width:13px;height:13px;fill:var(--green-400)}
+
+/* ── Crop Visualisation ────────────────────────────────────────────────────── */
+#farm-canvas{width:100%;height:140px;background:linear-gradient(180deg,var(--sky) 0%,var(--sky) 55%,var(--soil-light) 55%,var(--soil) 100%);border-radius:8px;overflow:hidden;position:relative;margin-bottom:10px}
+#crop-svg{width:100%;height:100%;position:absolute;top:0;left:0}
+
+/* Day progress */
+#day-bar-wrap{margin-bottom:12px}
+.bar-label{display:flex;justify-content:space-between;font-size:.72rem;color:var(--gray-200);margin-bottom:4px}
+.bar-track{background:var(--gray-700);border-radius:4px;height:8px;overflow:hidden}
+.bar-fill{height:100%;border-radius:4px;transition:width .4s;background:linear-gradient(90deg,var(--green-600),var(--green-400))}
+#day-fill{background:linear-gradient(90deg,var(--soil-light),var(--green-500))}
+
+/* Gauges */
+.gauges-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
+.gauge-card{background:var(--card-bg);border-radius:8px;padding:8px 10px;border:1px solid #243828}
+.gauge-name{font-size:.65rem;color:var(--gray-200);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gauge-val{font-size:1.05rem;font-weight:700;color:var(--green-300);font-variant-numeric:tabular-nums}
+.gauge-unit{font-size:.6rem;color:var(--gray-400);margin-left:2px}
+.gauge-bar{margin-top:4px;height:4px;background:var(--gray-700);border-radius:2px;overflow:hidden}
+.gauge-fill{height:100%;border-radius:2px;background:var(--green-500);transition:width .4s}
+.gauge-fill.stress{background:var(--yellow)}
+.gauge-fill.warn{background:var(--red)}
+
+/* Controls panel (center) */
+#center-panel{display:flex;flex-direction:column;gap:12px;overflow-y:auto;padding:14px}
+
+/* Episode controls */
+.controls-row{display:flex;gap:8px;flex-wrap:wrap}
+.btn{padding:8px 16px;border-radius:6px;border:none;cursor:pointer;font-size:.82rem;font-weight:600;transition:.15s;display:flex;align-items:center;gap:6px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-primary{background:var(--green-600);color:#fff}
+.btn-primary:hover:not(:disabled){background:var(--green-500)}
+.btn-secondary{background:var(--gray-700);color:var(--gray-100)}
+.btn-secondary:hover:not(:disabled){background:var(--gray-600)}
+.btn-action{padding:6px 10px;font-size:.75rem}
+.btn-action.active{border:2px solid var(--green-400)}
+
+/* Action buttons */
+#action-row{display:flex;gap:6px;flex-wrap:wrap}
+.action-btn{flex:1;min-width:60px;background:var(--card-bg);color:var(--green-300);border:1px solid var(--green-800);border-radius:6px;padding:8px 4px;cursor:pointer;font-size:.72rem;text-align:center;transition:.2s}
+.action-btn:hover{background:var(--green-800);border-color:var(--green-500)}
+.action-btn.dqn-choice{border-color:var(--yellow);color:var(--yellow);background:#2a2510}
+.action-btn.selected{background:var(--green-700);border-color:var(--green-400);color:#fff}
+
+/* Q-value chart */
+.chart-wrap{background:var(--card-bg);border-radius:8px;padding:12px;border:1px solid #243828}
+.chart-wrap canvas{max-height:140px}
+.chart-label{font-size:.68rem;color:var(--gray-400);margin-bottom:6px}
+
+/* Season chart */
+#season-chart-wrap{background:var(--card-bg);border-radius:8px;padding:12px;border:1px solid #243828;flex:1}
+#season-chart-wrap canvas{width:100%!important;height:160px!important}
+
+/* ── LLM Panel ─────────────────────────────────────────────────────────────── */
+#llm-panel{display:flex;flex-direction:column;height:100%;overflow:hidden;padding:0}
+.tab-bar{display:flex;border-bottom:1px solid #1e3320;background:var(--panel-bg);flex-shrink:0}
+.tab{padding:10px 14px;font-size:.72rem;cursor:pointer;color:var(--gray-400);letter-spacing:.5px;border-bottom:2px solid transparent;transition:.2s;white-space:nowrap}
+.tab.active{color:var(--green-300);border-bottom-color:var(--green-400)}
+.tab-content{display:none;flex:1;overflow-y:auto;padding:14px;flex-direction:column}
+.tab-content.active{display:flex}
+
+/* Explanation card */
+.explain-card{background:var(--card-bg);border-radius:8px;padding:12px;border:1px solid #243828;margin-bottom:10px;line-height:1.55;font-size:.82rem;color:var(--green-100)}
+.explain-card .label{font-size:.65rem;text-transform:uppercase;letter-spacing:1px;color:var(--green-400);margin-bottom:6px}
+.explain-card p{color:#d0e8d4}
+.q-bar-row{display:flex;align-items:center;gap:8px;margin:3px 0;font-size:.75rem}
+.q-bar-row .q-label{width:70px;color:var(--gray-200)}
+.q-bar-outer{flex:1;background:var(--gray-700);border-radius:3px;height:14px;overflow:hidden}
+.q-bar-inner{height:100%;border-radius:3px;background:var(--green-600);transition:width .4s}
+.q-bar-inner.best{background:var(--yellow)}
+.q-val{width:50px;text-align:right;color:var(--gray-200);font-family:var(--font-mono);font-size:.7rem}
+
+/* Chat */
+#chat-messages{flex:1;overflow-y:auto;padding:0 0 8px;display:flex;flex-direction:column;gap:8px;min-height:0}
+.chat-msg{border-radius:8px;padding:9px 12px;font-size:.8rem;line-height:1.5;max-width:95%}
+.chat-msg.user{background:var(--green-800);color:var(--green-100);align-self:flex-end}
+.chat-msg.ai{background:var(--card-bg);border:1px solid #243828;color:#d0e8d4;align-self:flex-start}
+.chat-msg.ai .ai-label{font-size:.6rem;color:var(--green-400);margin-bottom:4px;text-transform:uppercase;letter-spacing:.8px}
+#chat-input-row{display:flex;gap:8px;padding:10px 14px;border-top:1px solid #1e3320;flex-shrink:0}
+#chat-input{flex:1;background:var(--card-bg);border:1px solid #2a3e2d;border-radius:6px;padding:8px 10px;color:#e0f0e4;font-size:.82rem;outline:none}
+#chat-input:focus{border-color:var(--green-600)}
+#chat-send{background:var(--green-700);border:none;color:#fff;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:.8rem}
+#chat-send:hover{background:var(--green-600)}
+
+/* ── Bottom: Training History ─────────────────────────────────────────────── */
+#history-panel{background:#111a12;border-top:2px solid #1e3320;padding:10px 18px;display:grid;grid-template-columns:auto 1fr 1fr 1fr;gap:14px;align-items:center;overflow:hidden}
+.hist-meta{min-width:130px}
+.hist-meta h3{font-size:.8rem;color:var(--green-300);margin-bottom:4px}
+.hist-meta p{font-size:.7rem;color:var(--gray-400)}
+.hist-chart{height:100%}
+.hist-chart canvas{height:100%!important;max-height:180px}
+
+/* ── Settings modal ────────────────────────────────────────────────────────── */
+#modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100;align-items:center;justify-content:center}
+#modal-overlay.open{display:flex}
+#modal{background:#1a2b1e;border:1px solid var(--green-700);border-radius:12px;padding:24px;width:400px;max-width:95vw}
+#modal h2{color:var(--green-300);margin-bottom:18px;font-size:1rem}
+.form-row{margin-bottom:14px}
+.form-row label{display:block;font-size:.75rem;color:var(--gray-200);margin-bottom:5px}
+.form-row select,.form-row input{width:100%;background:var(--card-bg);border:1px solid #2a3e2d;color:#e0f0e4;padding:8px 10px;border-radius:6px;font-size:.82rem;outline:none}
+.form-row select:focus,.form-row input:focus{border-color:var(--green-600)}
+.modal-footer{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}
+
+/* ── Toast ─────────────────────────────────────────────────────────────────── */
+#toast{position:fixed;bottom:20px;right:20px;background:var(--green-700);color:#fff;padding:10px 18px;border-radius:8px;font-size:.82rem;opacity:0;transform:translateY(10px);transition:.3s;pointer-events:none;z-index:200}
+#toast.show{opacity:1;transform:translateY(0)}
+#toast.error-toast{background:#8b1a1a}
+
+/* ── Spinner ────────────────────────────────────────────────────────────────── */
+.spinner{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-dot{display:inline-block;animation:blink 1s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* Misc */
+.section-sep{height:1px;background:#1e3320;margin:10px 0}
+.info-row{display:flex;justify-content:space-between;font-size:.72rem;margin:4px 0;color:var(--gray-200)}
+.info-row .val{color:var(--green-300);font-family:var(--font-mono)}
+</style>
+</head>
+<body>
+<div id="app">
+
+<!-- ── Header ──────────────────────────────────────────────────────────────── -->
+<header>
+  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#5cb96a" stroke-width="2">
+    <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2"/>
+    <path d="M12 8v8M8 12l4-4 4 4"/>
+  </svg>
+  <h1>Nitro<span>DQN</span> &mdash; AI Nitrogen Manager</h1>
+  <div id="status-badge">⬤ Ready</div>
+  <div class="spacer"></div>
+  <button class="btn btn-secondary" id="settings-btn" onclick="openSettings()">⚙ LLM Settings</button>
+</header>
+
+<!-- ── Main ────────────────────────────────────────────────────────────────── -->
+<div id="main">
+
+  <!-- Left: Crop State Panel -->
+  <div class="panel" id="left-panel">
+    <div class="panel-title">🌽 Crop Status</div>
+
+    <!-- Farm visualisation -->
+    <div id="farm-canvas">
+      <svg id="crop-svg" viewBox="0 0 280 140" preserveAspectRatio="xMidYMid meet">
+        <!-- Sky clouds -->
+        <ellipse cx="50" cy="22" rx="28" ry="10" fill="rgba(255,255,255,0.55)"/>
+        <ellipse cx="70" cy="18" rx="18" ry="8" fill="rgba(255,255,255,0.4)"/>
+        <ellipse cx="210" cy="30" rx="22" ry="8" fill="rgba(255,255,255,0.45)"/>
+        <!-- Sun -->
+        <circle cx="240" cy="18" r="12" fill="#f5c842" opacity=".9"/>
+        <!-- Soil horizon -->
+        <rect x="0" y="78" width="280" height="62" fill="#5c3d1e"/>
+        <rect x="0" y="78" width="280" height="6" fill="#6b4c2a"/>
+        <!-- Crop plants group -->
+        <g id="plants"></g>
+        <!-- Rain group -->
+        <g id="rain-drops"></g>
+        <!-- Day label -->
+        <text id="svg-day-label" x="14" y="16" fill="#234" font-size="9" font-family="monospace">Day 0</text>
+      </svg>
+    </div>
+
+    <!-- Day bar -->
+    <div id="day-bar-wrap">
+      <div class="bar-label"><span>Season Progress</span><span id="day-text">Day 0 / 158</span></div>
+      <div class="bar-track"><div class="bar-fill" id="day-fill" style="width:0%"></div></div>
+    </div>
+
+    <!-- Info rows -->
+    <div class="info-row"><span>Cumulative N</span><span class="val" id="iv-cumN">0 kg/ha</span></div>
+    <div class="info-row"><span>N Stress</span><span class="val" id="iv-nstres">1.00</span></div>
+    <div class="info-row"><span>Biomass (topwt)</span><span class="val" id="iv-topwt">0 kg/ha</span></div>
+    <div class="info-row"><span>Leaf Area Index</span><span class="val" id="iv-lai">0.00</span></div>
+    <div class="info-row"><span>V-Stage</span><span class="val" id="iv-vstage">V0</span></div>
+    <div class="info-row"><span>Rain Today</span><span class="val" id="iv-rain">0 mm</span></div>
+    <div class="info-row"><span>N Leached</span><span class="val" id="iv-leach">0 kg/ha</span></div>
+
+    <div class="section-sep"></div>
+
+    <!-- Gauges -->
+    <div class="gauges-grid">
+      <div class="gauge-card">
+        <div class="gauge-name">N Stress</div>
+        <div class="gauge-val" id="g-nstres">1.00</div>
+        <div class="gauge-bar"><div class="gauge-fill stress" id="gf-nstres" style="width:100%"></div></div>
+      </div>
+      <div class="gauge-card">
+        <div class="gauge-name">LAI</div>
+        <div class="gauge-val" id="g-lai">0.00</div>
+        <div class="gauge-bar"><div class="gauge-fill" id="gf-lai" style="width:0%"></div></div>
+      </div>
+      <div class="gauge-card">
+        <div class="gauge-name">Biomass</div>
+        <div class="gauge-val" id="g-topwt">0</div>
+        <div class="gauge-bar"><div class="gauge-fill" id="gf-topwt" style="width:0%"></div></div>
+      </div>
+      <div class="gauge-card">
+        <div class="gauge-name">V-Stage</div>
+        <div class="gauge-val" id="g-vstage">0.0</div>
+        <div class="gauge-bar"><div class="gauge-fill" id="gf-vstage" style="width:0%"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Center: Controls + Charts -->
+  <div id="center-panel">
+    <div class="panel-title">🤖 DQN Controller</div>
+
+    <!-- Episode controls -->
+    <div class="controls-row">
+      <button class="btn btn-primary" id="btn-start" onclick="startEpisode()">▶ New Episode</button>
+      <button class="btn btn-secondary" id="btn-auto" onclick="autoRun()" disabled>⚡ Auto 10 Steps</button>
+      <button class="btn btn-secondary" id="btn-auto-all" onclick="autoRunAll()" disabled>⏩ Run Full Season</button>
+      <button class="btn btn-secondary" id="btn-step" onclick="stepDQN()" disabled>Step DQN →</button>
+      <button class="btn btn-primary" id="btn-demo" onclick="runDemo()" style="background:#a13a6e">🎬 Run Demo</button>
+    </div>
+
+    <!-- Manual action chooser -->
+    <div>
+      <div class="chart-label">Manual Action Override (click to apply)</div>
+      <div id="action-row">
+        <button class="action-btn" onclick="manualStep(0)">0<br/>kg/ha<br/><small>Skip</small></button>
+        <button class="action-btn" onclick="manualStep(1)">40<br/>kg/ha<br/><small>Light</small></button>
+        <button class="action-btn" onclick="manualStep(2)">80<br/>kg/ha<br/><small>Med</small></button>
+        <button class="action-btn" onclick="manualStep(3)">120<br/>kg/ha<br/><small>Heavy</small></button>
+        <button class="action-btn" onclick="manualStep(4)">160<br/>kg/ha<br/><small>Max</small></button>
+      </div>
+    </div>
+
+    <!-- Q-values bar chart -->
+    <div class="chart-wrap">
+      <div class="chart-label">DQN Q-values (current state) — yellow = chosen action</div>
+      <canvas id="q-chart" height="130"></canvas>
+    </div>
+
+    <!-- Season timeline chart -->
+    <div id="season-chart-wrap">
+      <div class="chart-label">Season Timeline — N applied per day (blue) + N-stress (red)</div>
+      <canvas id="season-chart"></canvas>
+    </div>
+
+    <!-- Episode summary (shown at end) -->
+    <div id="ep-summary" style="display:none" class="explain-card">
+      <div class="label">🏆 Episode Complete</div>
+      <div id="ep-summary-text"></div>
+    </div>
+  </div>
+
+  <!-- Right: LLM Panel -->
+  <div id="llm-panel">
+    <div class="tab-bar">
+      <div class="tab active" onclick="switchTab('explain')">🌿 State</div>
+      <div class="tab" onclick="switchTab('decision')">🧠 Decision</div>
+      <div class="tab" onclick="switchTab('chat')">💬 Advisor</div>
+    </div>
+
+    <!-- Tab: State Explanation -->
+    <div class="tab-content active" id="tab-explain">
+      <div class="explain-card">
+        <div class="label">Current Farm Status</div>
+        <p id="state-explain-text">Start an episode to see an AI explanation of the crop state.</p>
+      </div>
+      <div class="explain-card" id="state-stage-card">
+        <div class="label">Growth Stage</div>
+        <p id="stage-explain-text">—</p>
+      </div>
+    </div>
+
+    <!-- Tab: Decision Explanation -->
+    <div class="tab-content" id="tab-decision">
+      <div class="explain-card">
+        <div class="label">Why the DQN chose this action</div>
+        <p id="decision-explain-text">Step through the simulation to see DQN decision reasoning.</p>
+      </div>
+      <div class="explain-card">
+        <div class="label">Q-values (all actions)</div>
+        <div id="q-bars-llm"></div>
+      </div>
+    </div>
+
+    <!-- Tab: Advisor Chat -->
+    <div class="tab-content" id="tab-chat" style="flex-direction:column;padding:0">
+      <div id="chat-messages" style="padding:14px"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Bottom: Training History ─────────────────────────────────────────────── -->
+<div id="history-panel">
+  <div class="hist-meta">
+    <h3>📈 Training History</h3>
+    <p id="hist-episodes">Loading…</p>
+    <p id="hist-note" style="margin-top:4px;font-size:.65rem;color:#555">From dqn_training_log.json</p>
+  </div>
+  <div class="hist-chart"><canvas id="hist-reward-chart"></canvas></div>
+  <div class="hist-chart"><canvas id="hist-n-chart"></canvas></div>
+  <div class="hist-chart"><canvas id="hist-yield-chart"></canvas></div>
+</div>
+
+<!-- Chat input (outside llm-panel to keep fixed at bottom) -->
+<div id="chat-input-row" style="position:fixed;bottom:220px;right:0;width:320px;background:var(--panel-bg);border-top:1px solid #1e3320;z-index:10">
+  <input id="chat-input" type="text" placeholder="Ask the agronomist AI…" onkeydown="if(event.key==='Enter')sendChat()"/>
+  <button id="chat-send" onclick="sendChat()">Send</button>
+</div>
+
+<!-- Settings Modal -->
+<div id="modal-overlay">
+  <div id="modal">
+    <h2>⚙ LLM Provider Settings</h2>
+    <div class="form-row">
+      <label>Provider</label>
+      <select id="s-provider" onchange="onProviderChange()">
+        <option value="mock">Mock (no API key — offline)</option>
+        <option value="openai">OpenAI</option>
+        <option value="anthropic">Anthropic Claude</option>
+        <option value="gemini">Google Gemini</option>
+        <option value="groq">Groq</option>
+        <option value="ollama">Ollama (local)</option>
+      </select>
+    </div>
+    <div class="form-row" id="s-model-row">
+      <label>Model (leave blank for default)</label>
+      <input id="s-model" type="text" placeholder="e.g. gpt-4o-mini / claude-haiku-4-5 / llama3.2"/>
+    </div>
+    <div class="form-row" id="s-key-row">
+      <label>API Key</label>
+      <input id="s-key" type="password" placeholder="sk-… / AIza… / AQ.Ab…"/>
+    </div>
+    <div class="form-row" id="s-url-row" style="display:none">
+      <label>Ollama Base URL</label>
+      <input id="s-url" type="text" value="http://localhost:11434"/>
+    </div>
+    <p id="s-note" style="font-size:.72rem;color:var(--gray-400);margin-top:-6px">
+      In mock mode the app runs fully offline with rule-based responses.
+    </p>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeSettings()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveSettings()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+/* ══════════════════════════════════════════════════════════════════════════════
+   State
+══════════════════════════════════════════════════════════════════════════════ */
+let episodeActive = false;
+let episodeDone   = false;
+let currentStep   = 0;
+let seasonData    = [];   // [{step, action_kg, total_n, yield, nstres}]
+let autoRunning   = false;
+let demoRunning   = false;
+
+const ACTIONS_KG = [0, 40, 80, 120, 160];
+const SEASON_LEN = 158;
+const STAGE_NAMES = {1:'Emergence',2:'Vegetative',3:'Tasseling',4:'Grain Fill',5:'Dough',6:'Maturity'};
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Charts
+══════════════════════════════════════════════════════════════════════════════ */
+const chartDefaults = {
+  plugins:{legend:{display:false}},
+  animation:{duration:200},
+  scales:{
+    x:{ticks:{color:'#556',font:{size:9}},grid:{color:'#1e2e1e'}},
+    y:{ticks:{color:'#556',font:{size:9}},grid:{color:'#1e2e1e'}},
+  },
+};
+
+// Q-value bar chart
+const qCtx = document.getElementById('q-chart').getContext('2d');
+const qChart = new Chart(qCtx, {
+  type:'bar',
+  data:{
+    labels:['0 kg/ha','40 kg/ha','80 kg/ha','120 kg/ha','160 kg/ha'],
+    datasets:[{data:[0,0,0,0,0],backgroundColor:'#2d7a3a',borderRadius:4}]
+  },
+  options:{...chartDefaults,maintainAspectRatio:false,
+    plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`Q = ${c.raw.toFixed(3)}`}}},
+    scales:{x:{ticks:{color:'#88aa88',font:{size:10}},grid:{color:'#1e2e1e'}},
+            y:{ticks:{color:'#88aa88',font:{size:9}},grid:{color:'#1e2e1e'}}}}
+});
+
+// Season timeline chart
+const sCtx = document.getElementById('season-chart').getContext('2d');
+const seasonChart = new Chart(sCtx, {
+  type:'bar',
+  data:{
+    labels:[],
+    datasets:[
+      {label:'N applied',data:[],backgroundColor:'rgba(52,152,219,.7)',yAxisID:'y',order:2},
+      {label:'N-stress',data:[],borderColor:'#e74c3c',backgroundColor:'transparent',
+       type:'line',yAxisID:'y2',borderWidth:1.5,pointRadius:0,order:1},
+    ]
+  },
+  options:{
+    ...chartDefaults,
+    maintainAspectRatio:false,
+    plugins:{legend:{display:true,labels:{color:'#88aa88',font:{size:9}}}},
+    scales:{
+      x:{ticks:{color:'#556',font:{size:8},maxTicksLimit:20},grid:{color:'#1e2e1e'}},
+      y:{position:'left',title:{display:true,text:'kg N/ha',color:'#556',font:{size:9}},
+         ticks:{color:'#556',font:{size:8}},grid:{color:'#1e2e1e'}},
+      y2:{position:'right',min:0,max:1,title:{display:true,text:'N-stress',color:'#556',font:{size:9}},
+          ticks:{color:'#556',font:{size:8}},grid:{display:false}},
+    }
+  }
+});
+
+/* History charts */
+function makeHistChart(canvasId, label, color) {
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  return new Chart(ctx, {
+    type:'line',
+    data:{labels:[],datasets:[{label,data:[],borderColor:color,backgroundColor:'transparent',
+         borderWidth:1.5,pointRadius:0,tension:.3}]},
+    options:{
+      maintainAspectRatio:false,animation:{duration:0},
+      plugins:{legend:{display:true,labels:{color:'#88aa88',font:{size:8},boxWidth:10}}},
+      scales:{
+        x:{ticks:{color:'#556',font:{size:7},maxTicksLimit:8},grid:{color:'#1a2a1a'}},
+        y:{ticks:{color:'#556',font:{size:7}},grid:{color:'#1a2a1a'}},
+      }
+    }
+  });
+}
+const histRewardChart = makeHistChart('hist-reward-chart','Shaped Reward','#5cb96a');
+const histNChart      = makeHistChart('hist-n-chart','Total N kg/ha','#3498db');
+const histYieldChart  = makeHistChart('hist-yield-chart','Yield kg/ha','#f5c842');
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   API helpers
+══════════════════════════════════════════════════════════════════════════════ */
+async function api(path, method='GET', body=null) {
+  const opts = {method, headers:{'Content-Type':'application/json'}};
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(path, opts);
+  if (!r.ok) {
+    const err = await r.json().catch(()=>({detail:'Unknown error'}));
+    throw new Error(err.detail || r.statusText);
+  }
+  return r.json();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Episode lifecycle
+══════════════════════════════════════════════════════════════════════════════ */
+async function startEpisode() {
+  autoRunning = false;
+  try {
+    setBusy(true);
+    const d = await api('/api/episode/start','POST',{seed:42+Math.floor(Math.random()*100)});
+    episodeActive = true;
+    episodeDone   = false;
+    currentStep   = 0;
+    seasonData    = [];
+    document.getElementById('ep-summary').style.display='none';
+    setControls(true);
+    updateUI(d, null);
+    setExplanation(d.llm_explanation, null);
+    updateSeasonChart([]);
+    setStatus('Episode started', false);
+    toast('New episode started!');
+  } catch(e) { toast(e.message, true); }
+  finally { setBusy(false); }
+}
+
+async function stepDQN(actionIdx=null) {
+  if (!episodeActive || episodeDone) return;
+  try {
+    setBusy(true);
+    const body = actionIdx !== null ? {action_index:actionIdx} : {};
+    const d = await api('/api/episode/step','POST', body);
+    currentStep = d.step;
+    episodeDone = d.episode_done;
+    if (d.season_summary) seasonData = d.season_summary;
+    updateUI(d, d.action_idx);
+    setExplanation(d.state_explanation, d.decision_explanation);
+    updateSeasonChart(seasonData);
+    if (d.episode_done) onEpisodeDone(d);
+    else setStatus(`Day ${d.step} / ${SEASON_LEN}`, false);
+  } catch(e) { toast(e.message, true); }
+  finally { setBusy(false); }
+}
+
+async function manualStep(idx) {
+  if (!episodeActive || episodeDone) { toast('Start an episode first!'); return; }
+  await stepDQN(idx);
+}
+
+async function autoRun(steps=10) {
+  if (!episodeActive || episodeDone) return;
+  autoRunning = true;
+  try {
+    setBusy(true);
+    const d = await api(`/api/episode/auto?steps=${steps}`,'POST');
+    currentStep = d.step;
+    episodeDone = d.episode_done;
+    if (d.season_summary) seasonData = d.season_summary;
+    updateUI(d, null);
+    setExplanation(d.state_explanation, null);
+    updateSeasonChart(seasonData);
+    if (d.episode_done) onEpisodeDone(d);
+    else setStatus(`Day ${d.step} / ${SEASON_LEN}`, false);
+  } catch(e) { toast(e.message, true); }
+  finally { setBusy(false); autoRunning = false; }
+}
+
+async function autoRunAll() {
+  if (!episodeActive || episodeDone) return;
+  autoRunning = true;
+  setStatus('Running full season…', false);
+  // Run in chunks of 20 for visual updates
+  while (!episodeDone && autoRunning) {
+    await autoRun(20);
+    await new Promise(r => setTimeout(r, 100));
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Scripted demo — drives the whole app for recording
+   Paced for Gemini free-tier (10 req/min)
+══════════════════════════════════════════════════════════════════════════════ */
+async function runDemo() {
+  if (demoRunning) return;
+  demoRunning = true;
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const btn = document.getElementById('btn-demo');
+  const origText = btn.textContent;
+  btn.textContent = '🎬 Demo running…';
+  btn.disabled = true;
+  document.getElementById('btn-start').disabled = true;
+
+  const DEMO_QUESTIONS = [
+    "Looking at the current crop state, is the nitrogen stress level concerning?",
+    "Why does the reward function penalize over-fertilization more heavily than under-fertilization?",
+    "How does heavy rainfall affect nitrate leaching during the growing season?",
+    "Who won the FIFA World Cup in 2022?"   // off-topic → tests refusal
+  ];
+
+  // LLM-call budget audit (Gemini free tier = 10 calls / 60s rolling window):
+  //   startEpisode      = 1 call
+  //   stepDQN           = 2 calls (state + decision)
+  //   manualStep        = 2 calls
+  //   autoRun           = 1 call (only at end)
+  //   sendChat          = 1 call
+  //   autoRunAll chunks = 1 call per chunk
+  // Pacing below keeps every 60s window ≤ 9 calls.
+  try {
+    // ── Act 1 — start a fresh season ──
+    setStatus('🎬 Demo: starting new season', false);
+    switchTab('explain');
+    await startEpisode();                              // T=0  : 1 call
+    await sleep(7000);
+
+    // ── Act 2 — two DQN-driven steps to show decision panel ──
+    setStatus('🎬 Demo: DQN step 1', false);
+    switchTab('decision');
+    await sleep(800);
+    await stepDQN();                                   // T=8  : 2 calls  (cum 3)
+    await sleep(9000);
+
+    setStatus('🎬 Demo: DQN step 2', false);
+    await stepDQN();                                   // T=18 : 2 calls  (cum 5)
+    await sleep(9000);
+
+    // ── Act 3 — manual override to contrast with DQN ──
+    setStatus('🎬 Demo: manual heavy dose (160 kg/ha)', false);
+    await manualStep(4);                               // T=28 : 2 calls  (cum 7)
+    await sleep(11000);
+
+    // ── Act 4 — fast-forward 20 days ──
+    setStatus('🎬 Demo: fast-forward 20 days', false);
+    switchTab('explain');
+    await sleep(800);
+    await autoRun(20);                                 // T=40 : 1 call   (cum 8)
+    await sleep(8000);
+
+    // ── Act 5 — advisor Q&A ──
+    setStatus('🎬 Demo: pausing for rate-limit window', false);
+    await sleep(15000);  // give the 60s window time to clear before chat block
+
+    switchTab('chat');
+    await sleep(1500);
+    const inp = document.getElementById('chat-input');
+    for (let i = 0; i < DEMO_QUESTIONS.length; i++) {
+      const q = DEMO_QUESTIONS[i];
+      setStatus(`🎬 Demo: question ${i+1}/${DEMO_QUESTIONS.length}`, false);
+      inp.value = q;
+      await sleep(1100);
+      await sendChat();                                // each: 1 call
+      await sleep(12000);                              // 12s gap → max 5/min from chat
+    }
+
+    // ── Act 6 — finish the season ──
+    setStatus('🎬 Demo: cooldown before final run', false);
+    await sleep(10000);  // clear the chat-burst window
+    setStatus('🎬 Demo: running the rest of the season', false);
+    switchTab('explain');
+    await sleep(800);
+    await autoRunAll();
+    await sleep(2000);
+
+    setStatus('🎬 Demo complete', false);
+    toast('Demo finished — you can stop the recording now');
+  } catch (e) {
+    toast('Demo error: ' + e.message, true);
+    setStatus('Demo aborted: ' + e.message, true);
+  } finally {
+    demoRunning = false;
+    btn.textContent = origText;
+    btn.disabled = false;
+    document.getElementById('btn-start').disabled = false;
+  }
+}
+
+function onEpisodeDone(d) {
+  episodeDone = true;
+  setControls(false);
+  const yield_val = d.final_yield ? d.final_yield.toFixed(0) : '—';
+  const totalN = d.total_n ? d.total_n.toFixed(0) : '—';
+  const summary = document.getElementById('ep-summary');
+  document.getElementById('ep-summary-text').innerHTML =
+    `Season complete! <b>Final Yield: ${yield_val} kg/ha</b> | Total N Applied: ${totalN} kg/ha | Days: ${d.step}`;
+  summary.style.display = 'block';
+  setStatus('Episode finished ✓', false);
+  toast(`Season done! Yield: ${yield_val} kg/ha`);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   UI update
+══════════════════════════════════════════════════════════════════════════════ */
+function updateUI(d, actionIdx) {
+  const obs = d.obs || {};
+  const dap = obs.dap || 0;
+
+  // Day bar
+  document.getElementById('day-text').textContent = `Day ${Math.round(dap)} / ${SEASON_LEN}`;
+  document.getElementById('day-fill').style.width = `${Math.min(100, dap/SEASON_LEN*100)}%`;
+  document.getElementById('svg-day-label').textContent = `Day ${Math.round(dap)}`;
+
+  // Info rows
+  setVal('iv-cumN',   `${(obs.cumsumfert||0).toFixed(0)} kg/ha`);
+  setVal('iv-nstres', (obs.nstres||1).toFixed(2));
+  setVal('iv-topwt',  `${(obs.topwt||0).toFixed(0)} kg/ha`);
+  setVal('iv-lai',    (obs.xlai||0).toFixed(2));
+  setVal('iv-vstage', `V${(obs.vstage||0).toFixed(1)}`);
+  setVal('iv-rain',   `${(obs.rain||0).toFixed(1)} mm`);
+  setVal('iv-leach',  `${(obs.tleachd||0).toFixed(1)} kg/ha`);
+
+  // Gauges
+  const nstres = obs.nstres || 1;
+  setGauge('nstres', nstres, 1, nstres < 0.6 ? 'warn' : 'stress');
+  setGauge('lai',    obs.xlai||0, 6.5, '');
+  setGauge('topwt',  obs.topwt||0, 15000, '');
+  setGauge('vstage', obs.vstage||0, 18, '');
+  document.getElementById('g-nstres').textContent = nstres.toFixed(2);
+  document.getElementById('g-lai').textContent    = (obs.xlai||0).toFixed(2);
+  document.getElementById('g-topwt').textContent  = Math.round(obs.topwt||0);
+  document.getElementById('g-vstage').textContent = (obs.vstage||0).toFixed(1);
+
+  // Q-values bar chart
+  if (d.q_values) {
+    const bestIdx = d.q_values.indexOf(Math.max(...d.q_values));
+    const chosen  = actionIdx !== null ? actionIdx : bestIdx;
+    qChart.data.datasets[0].data = d.q_values;
+    qChart.data.datasets[0].backgroundColor = d.q_values.map((_,i) =>
+      i === chosen ? '#f5c842' : '#2d7a3a');
+    qChart.update();
+    updateQLLMBars(d.q_values, chosen);
+  }
+
+  // Action buttons highlight
+  document.querySelectorAll('.action-btn').forEach((b,i) => {
+    b.classList.remove('dqn-choice','selected');
+    if (d.q_values && i === (actionIdx ?? d.q_values.indexOf(Math.max(...d.q_values))))
+      b.classList.add('dqn-choice');
+  });
+
+  // Crop SVG
+  drawCrop(obs);
+
+  // Rain animation
+  animateRain(obs.rain || 0);
+}
+
+function setGauge(id, val, max, cls) {
+  const pct = Math.min(100, val / max * 100);
+  const fill = document.getElementById(`gf-${id}`);
+  fill.style.width = pct + '%';
+  fill.className = `gauge-fill ${cls}`;
+}
+
+function setVal(id, text) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = text;
+}
+
+/* ── Crop SVG ────────────────────────────────────────────────────────────── */
+function drawCrop(obs) {
+  const vstage = Math.min(obs.vstage || 0, 18);
+  const lai    = Math.min(obs.xlai   || 0, 6.5);
+  const istage = obs.istage || 1;
+  const g      = document.getElementById('plants');
+
+  // Scale plant height by vstage (0→2 = seedling, 18 = full corn stalk)
+  const plantH = 10 + (vstage / 18) * 52;   // px in SVG coords
+  const soilY  = 78;
+  const leafW  = 2 + (lai / 6.5) * 14;
+  const stemW  = 1.5 + vstage * 0.15;
+
+  // Draw 7 evenly spaced plants
+  const xs = [30, 65, 100, 140, 180, 215, 250];
+  let svg = '';
+  for (const x of xs) {
+    const baseY = soilY;
+    const topY  = baseY - plantH;
+    const leafColor = vstage < 2 ? '#7ec87e' : (istage >= 4 ? '#a8b860' : '#4caf50');
+
+    // Stem
+    svg += `<rect x="${x-stemW/2}" y="${topY}" width="${stemW}" height="${plantH}" fill="#3a7a2a" rx="1"/>`;
+
+    // Leaves (appear after V2)
+    if (vstage > 2) {
+      const nLeaves = Math.min(4, Math.floor(vstage / 4));
+      for (let l = 0; l < nLeaves; l++) {
+        const lY = baseY - plantH * (0.3 + l * 0.18);
+        const side = l % 2 === 0 ? 1 : -1;
+        svg += `<ellipse cx="${x + side*(leafW/2)}" cy="${lY}" rx="${leafW/2}" ry="${2+lai*0.4}" fill="${leafColor}" opacity=".85" transform="rotate(${side*25} ${x} ${lY})"/>`;
+      }
+    }
+
+    // Ear / tassel (after tasseling)
+    if (istage >= 3 && vstage > 12) {
+      svg += `<ellipse cx="${x}" cy="${topY+4}" rx="${2+lai*0.3}" ry="5" fill="#f5c842" opacity=".8"/>`;
+    }
+    // Seedling (very early)
+    if (vstage <= 2) {
+      svg += `<ellipse cx="${x}" cy="${topY}" rx="4" ry="3" fill="#a5d6a7" opacity=".9"/>`;
+    }
+  }
+  g.innerHTML = svg;
+}
+
+/* ── Rain animation ────────────────────────────────────────────────────────── */
+function animateRain(rainMm) {
+  const g = document.getElementById('rain-drops');
+  if (rainMm < 2) { g.innerHTML = ''; return; }
+  const nDrops = Math.min(20, Math.round(rainMm * 1.5));
+  let svg = '';
+  for (let i = 0; i < nDrops; i++) {
+    const x = Math.random() * 280;
+    const y = Math.random() * 70;
+    svg += `<line x1="${x}" y1="${y}" x2="${x-1}" y2="${y+6}" stroke="#aad4f5" stroke-width="1" opacity=".6"/>`;
+  }
+  g.innerHTML = svg;
+  setTimeout(() => { g.innerHTML = ''; }, 800);
+}
+
+/* ── LLM text panels ────────────────────────────────────────────────────────── */
+function setExplanation(stateText, decisionText) {
+  if (stateText) {
+    document.getElementById('state-explain-text').textContent = stateText;
+  }
+  if (decisionText) {
+    document.getElementById('decision-explain-text').textContent = decisionText;
+    switchTab('decision');
+  }
+}
+
+function updateQLLMBars(qVals, chosenIdx) {
+  const minQ = Math.min(...qVals);
+  const maxQ = Math.max(...qVals);
+  const range = maxQ - minQ || 1;
+  const labels = ['0 kg/ha','40 kg/ha','80 kg/ha','120 kg/ha','160 kg/ha'];
+  let html = '';
+  qVals.forEach((q, i) => {
+    const pct = ((q - minQ) / range * 100).toFixed(1);
+    const isBest = i === chosenIdx;
+    html += `<div class="q-bar-row">
+      <div class="q-label">${labels[i]}</div>
+      <div class="q-bar-outer"><div class="q-bar-inner ${isBest?'best':''}" style="width:${pct}%"></div></div>
+      <div class="q-val">${q.toFixed(3)}</div>
+    </div>`;
+  });
+  document.getElementById('q-bars-llm').innerHTML = html;
+}
+
+/* ── Season chart ────────────────────────────────────────────────────────── */
+function updateSeasonChart(data) {
+  seasonChart.data.labels = data.map(d => d.step);
+  seasonChart.data.datasets[0].data = data.map(d => d.action_kg);
+  seasonChart.data.datasets[1].data = data.map(d => d.nstres);
+  seasonChart.update();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Chat
+══════════════════════════════════════════════════════════════════════════════ */
+function appendMsg(text, role) {
+  const div = document.createElement('div');
+  div.className = `chat-msg ${role}`;
+  if (role === 'ai') div.innerHTML = `<div class="ai-label">🌱 Agronomist AI</div>${escHtml(text)}`;
+  else div.textContent = text;
+  const msgs = document.getElementById('chat-messages');
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+  return div;
+}
+
+function escHtml(t) { return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+async function sendChat() {
+  const input = document.getElementById('chat-input');
+  const msg = input.value.trim();
+  if (!msg) return;
+  input.value = '';
+  appendMsg(msg, 'user');
+  const loading = appendMsg('Thinking…', 'ai');
+  loading.style.opacity = '.6';
+  try {
+    const d = await api('/api/chat','POST',{message: msg});
+    loading.innerHTML = `<div class="ai-label">🌱 Agronomist AI</div>${escHtml(d.response)}`;
+    loading.style.opacity = '1';
+  } catch(e) {
+    loading.innerHTML = `<div class="ai-label">🌱 Agronomist AI</div>Error: ${e.message}`;
+    loading.style.opacity = '1';
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Training history
+══════════════════════════════════════════════════════════════════════════════ */
+async function loadTrainingHistory() {
+  try {
+    const d = await api('/api/training-log');
+    if (d.error) { document.getElementById('hist-episodes').textContent = d.error; return; }
+    const eps = Array.from({length: d.episode_rewards.length}, (_,i) => (i+1)*5);
+    document.getElementById('hist-episodes').textContent =
+      `${d.total_episodes} episodes trained`;
+
+    function fillHist(chart, data) {
+      chart.data.labels = eps;
+      chart.data.datasets[0].data = data;
+      chart.update();
+    }
+    fillHist(histRewardChart, d.episode_shaped_rewards);
+    fillHist(histNChart,      d.episode_total_n);
+    fillHist(histYieldChart,  d.episode_yield);
+  } catch(e) {
+    document.getElementById('hist-episodes').textContent = 'Log not loaded';
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Settings modal
+══════════════════════════════════════════════════════════════════════════════ */
+let _settingsOpenProvider = 'mock';
+async function openSettings() {
+  const cfg = await api('/api/config').catch(()=>({}));
+  document.getElementById('s-provider').value = cfg.provider || 'mock';
+  document.getElementById('s-model').value    = cfg.model    || '';
+  document.getElementById('s-key').value      = '';
+  _settingsOpenProvider = cfg.provider || 'mock';
+  document.getElementById('modal-overlay').classList.add('open');
+  onProviderChange();
+}
+function closeSettings() { document.getElementById('modal-overlay').classList.remove('open'); }
+function onProviderChange() {
+  const p = document.getElementById('s-provider').value;
+  if (p !== _settingsOpenProvider) {
+    document.getElementById('s-model').value = '';
+    document.getElementById('s-key').value   = '';
+  }
+  document.getElementById('s-url-row').style.display = p==='ollama' ? '' : 'none';
+  document.getElementById('s-key-row').style.display = (p==='openai'||p==='anthropic'||p==='gemini'||p==='groq') ? '' : 'none';
+  const labels = {openai:'OpenAI', anthropic:'Anthropic', gemini:'Google Gemini', groq:'Groq'};
+  const defaults = {openai:'gpt-4o-mini', anthropic:'claude-haiku-4-5', gemini:'gemini-2.5-flash', groq:'llama-3.3-70b-versatile', ollama:'llama3.2:3b'};
+  document.getElementById('s-model').placeholder = `e.g. ${defaults[p] || 'mock'}`;
+  document.getElementById('s-note').textContent = p === 'mock'
+    ? 'In mock mode the app runs fully offline with rule-based responses.'
+    : p === 'ollama'
+    ? 'Make sure Ollama is running locally with your model pulled.'
+    : `Enter your ${labels[p]} API key. It is sent only to your local server.`;
+}
+async function saveSettings() {
+  const body = {
+    provider: document.getElementById('s-provider').value,
+    model:    document.getElementById('s-model').value || null,
+    api_key:  document.getElementById('s-key').value   || null,
+    base_url: document.getElementById('s-url').value   || null,
+  };
+  try {
+    await api('/api/config','POST', body);
+    closeSettings();
+    toast('LLM settings saved!');
+  } catch(e) { toast(e.message, true); }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Tabs
+══════════════════════════════════════════════════════════════════════════════ */
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach((t,i) => {
+    const names = ['explain','decision','chat'];
+    t.classList.toggle('active', names[i]===name);
+  });
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  document.getElementById(`tab-${name}`).classList.add('active');
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Misc helpers
+══════════════════════════════════════════════════════════════════════════════ */
+function setControls(active) {
+  document.getElementById('btn-auto').disabled     = !active || episodeDone;
+  document.getElementById('btn-auto-all').disabled = !active || episodeDone;
+  document.getElementById('btn-step').disabled     = !active || episodeDone;
+}
+
+function setBusy(busy) {
+  document.getElementById('btn-start').disabled = busy;
+}
+
+function setStatus(msg, isErr) {
+  const b = document.getElementById('status-badge');
+  b.textContent = (isErr ? '✕ ' : '⬤ ') + msg;
+  b.className = 'status-badge' + (isErr ? ' error' : '');
+}
+
+let toastTimer;
+function toast(msg, isErr=false) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'show' + (isErr ? ' error-toast' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.className = '', 3000);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Init welcome chat message
+══════════════════════════════════════════════════════════════════════════════ */
+window.addEventListener('load', () => {
+  loadTrainingHistory();
+  appendMsg('Hello! I\'m your AI agronomist. Start an episode and I\'ll explain what the DQN is doing at each step. You can also ask me anything about nitrogen management, crop stress, or the reinforcement learning model.', 'ai');
+  drawCrop({vstage:0,xlai:0,istage:1,rain:0});  // empty field
+});
+</script>
+</body>
+</html>

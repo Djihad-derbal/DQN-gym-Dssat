@@ -1,0 +1,20 @@
+# NitroDQN — DQN + LLM Nitrogen Management Web App
+# Install: pip install -r requirements.txt
+
+# Web framework
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+
+# DQN inference
+torch>=2.0.0          # CPU-only is fine; use torch --index-url https://download.pytorch.org/whl/cpu
+numpy>=1.24.0
+
+# LLM HTTP calls (used for OpenAI, Anthropic, Ollama)
+httpx>=0.27.0
+
+# Pydantic (bundled with FastAPI but explicit for clarity)
+pydantic>=2.0.0
+
+# Optional — only needed if you want to swap in the real gym-dssat-pdi environment
+# gym==0.21.0
+# gym-dssat-pdi
